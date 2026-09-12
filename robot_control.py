@@ -250,6 +250,15 @@ class AsyncRobotInterface:
         elif line in ["HOME_COMPLETE", "ABORT_COMPLETE", "MOVE_COMPLETE", "STOP_CLEARED", "STOP_TRIGGERED"]:
             self.last_event = line
 
+    def _reset_motion_state(self):
+        if self.motion_ser:
+            try:
+                self.motion_ser.reset_input_buffer()
+            except Exception:
+                pass
+        self.last_event = None
+        self.last_probe_result = None
+
     def _read_loop(self):
         while self.running:
             if self.simulation_mode:
@@ -277,7 +286,7 @@ class AsyncRobotInterface:
         self._target_sim_force = target_val
 
     def send_move(self, b_step, s_step, e_step, wp_step, wr_step):
-        self.last_event = None
+        self._reset_motion_state()
         if self.simulation_mode:
             # NEW: update simulated robot state so visualization reflects commanded move
             self.current_steps = [b_step, s_step, e_step, wp_step, wr_step]
@@ -292,8 +301,7 @@ class AsyncRobotInterface:
         Send probe command to motion board (or simulate plunge in sim mode).
         In simulation, animates descent from current position to target_z.
         """
-        self.last_event = None
-        self.last_probe_result = None
+        self._reset_motion_state()
         if self.simulation_mode:
             # Simulate the plunge trajectory
             steps_in_plunge = [b_step, s_step, e_step, wp_step, wr_step]
@@ -341,7 +349,7 @@ class AsyncRobotInterface:
             time.sleep(1.5)
             return True
         if self.motion_ser:
-            self.last_event = None
+            self._reset_motion_state()
             self.motion_ser.write(b"HOME\n")
         start = time.time()
         while time.time() - start < 120.0:
@@ -359,12 +367,18 @@ class AsyncRobotInterface:
 
     def clear_stop(self):
         """Send CLEAR_STOP command."""
-        self.last_event = None
-        self.last_probe_result = None
+        self._reset_motion_state()
         if self.simulation_mode:
-            return
+            return True
         if self.motion_ser:
             self.motion_ser.write(b"CLEAR_STOP\n")
+        start = time.time()
+        while time.time() - start < 1.0:
+            if self.last_event == "STOP_CLEARED":
+                self.last_event = None
+                return True
+            time.sleep(0.02)
+        return False
 
     def close(self):
         """Shutdown the interface gracefully."""
