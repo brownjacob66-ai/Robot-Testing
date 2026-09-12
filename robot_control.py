@@ -250,8 +250,8 @@ class AsyncRobotInterface:
         elif line in ["HOME_COMPLETE", "ABORT_COMPLETE", "MOVE_COMPLETE", "STOP_CLEARED", "STOP_TRIGGERED"]:
             self.last_event = line
 
-    def _reset_motion_state(self):
-        if self.motion_ser:
+    def _reset_motion_state(self, flush_serial=True):
+        if flush_serial and self.motion_ser:
             try:
                 self.motion_ser.reset_input_buffer()
             except Exception:
@@ -367,7 +367,7 @@ class AsyncRobotInterface:
 
     def clear_stop(self):
         """Send CLEAR_STOP command."""
-        self._reset_motion_state()
+        self._reset_motion_state(flush_serial=False)
         if self.simulation_mode:
             return
         if not self.motion_ser:
