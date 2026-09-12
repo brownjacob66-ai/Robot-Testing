@@ -250,12 +250,7 @@ class AsyncRobotInterface:
         elif line in ["HOME_COMPLETE", "ABORT_COMPLETE", "MOVE_COMPLETE", "STOP_CLEARED", "STOP_TRIGGERED"]:
             self.last_event = line
 
-    def _reset_motion_state(self, flush_serial=True):
-        if flush_serial and self.motion_ser:
-            try:
-                self.motion_ser.reset_input_buffer()
-            except Exception:
-                pass
+    def _reset_motion_state(self):
         self.last_event = None
         self.last_probe_result = None
 
@@ -366,20 +361,21 @@ class AsyncRobotInterface:
             self.motion_ser.write(b"ABORT\n")
 
     def clear_stop(self):
-        """Send CLEAR_STOP command."""
-        self._reset_motion_state(flush_serial=False)
+        """Send CLEAR_STOP command and return whether the controller acknowledged it."""
+        self._reset_motion_state()
         if self.simulation_mode:
-            return
+            return True
         if not self.motion_ser:
-            return
+            return False
 
         self.motion_ser.write(b"CLEAR_STOP\n")
         start = time.time()
         while time.time() - start < 1.0:
             if self.last_event == "STOP_CLEARED":
                 self.last_event = None
-                return
+                return True
             time.sleep(0.02)
+        return False
 
     def close(self):
         """Shutdown the interface gracefully."""
@@ -683,7 +679,9 @@ class LapidaryHMI(tk.Tk):
         )
         self.log(f"Approach steps: B={s_b} S={s_s} E={s_e} P={s_wp} R={s_wr}")
 
-        self.robot.clear_stop()
+        if not self.robot.clear_stop():
+            self.log("ERROR: Could not clear a latched hardware stop before the approach move.")
+            return
         self.robot.send_move(s_b, s_s, s_e, s_wp, s_wr)
 
         self.log("Waiting for approach move to complete...")
@@ -723,7 +721,9 @@ class LapidaryHMI(tk.Tk):
             return
 
         self.log(f"Probe steps (pitch locked): B={s_b_probe} S={s_s_probe} E={s_e_probe} P={s_wp_probe} R={s_wr_probe}")
-        self.robot.clear_stop()
+        if not self.robot.clear_stop():
+            self.log("ERROR: Could not clear a latched hardware stop before probing.")
+            return
 
         # ------------------------------------------------------------------
         # 2b) Execute probe: simulation vs hardware
@@ -853,7 +853,9 @@ class LapidaryHMI(tk.Tk):
             self.after(0, lambda: self.btn_cut.config(state=tk.NORMAL))
 
             time.sleep(0.3)
-            self.robot.clear_stop()
+            if not self.robot.clear_stop():
+                self.log("ERROR: Probe stop was not acknowledged as cleared.")
+                return
             time.sleep(0.1)
 
             try:
@@ -934,7 +936,9 @@ class LapidaryHMI(tk.Tk):
             return
 
         self.log(f"Starting {prof['name']} Faceting Sequence. Target Size: {size_mm} mm")
-        self.robot.clear_stop()
+        if not self.robot.clear_stop():
+            self.log("ERROR: Could not clear a latched hardware stop before starting the cut.")
+            return
 
         for stage in prof["stages"]:
             if self.abort_flag.is_set():
@@ -958,7 +962,9 @@ class LapidaryHMI(tk.Tk):
                 self.resume_event.wait()
                 if self.abort_flag.is_set():
                     return
-                self.robot.clear_stop()
+                if not self.robot.clear_stop():
+                    self.log("ERROR: Could not clear the hardware stop after the re-dop pause.")
+                    return
                 continue
 
             self.log(f"Executing: {stage['name']}")
