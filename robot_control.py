@@ -370,8 +370,10 @@ class AsyncRobotInterface:
         self._reset_motion_state()
         if self.simulation_mode:
             return True
-        if self.motion_ser:
-            self.motion_ser.write(b"CLEAR_STOP\n")
+        if not self.motion_ser:
+            return False
+
+        self.motion_ser.write(b"CLEAR_STOP\n")
         start = time.time()
         while time.time() - start < 1.0:
             if self.last_event == "STOP_CLEARED":
