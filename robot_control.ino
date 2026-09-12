@@ -356,13 +356,19 @@ void beginProbe(long b, long s, long e, long p, long r) {
 void serviceProbe() {
   // Hardware stop should immediately terminate probe
   if (digitalRead(STOP_PIN) == HIGH) {
+    long hitB = baseStepper.currentPosition();
+    long hitS = shoulderStepper.currentPosition();
+    long hitE = elbowStepper.currentPosition();
+    long hitP = wristPitchStepper.currentPosition();
+    long hitR = wristRollStepper.currentPosition();
+
     emergencyStopNow(nullptr, false);
     Serial.print("PROBE_HIT:");
-    Serial.print(baseStepper.currentPosition()); Serial.print(",");
-    Serial.print(shoulderStepper.currentPosition()); Serial.print(",");
-    Serial.print(elbowStepper.currentPosition()); Serial.print(",");
-    Serial.print(wristPitchStepper.currentPosition()); Serial.print(",");
-    Serial.println(wristRollStepper.currentPosition());
+    Serial.print(hitB); Serial.print(",");
+    Serial.print(hitS); Serial.print(",");
+    Serial.print(hitE); Serial.print(",");
+    Serial.print(hitP); Serial.print(",");
+    Serial.println(hitR);
     setNominalKinematics();
     return;
   }
