@@ -229,6 +229,27 @@ class AsyncRobotInterface:
         self.thread = threading.Thread(target=self._read_loop, daemon=True)
         self.thread.start()
 
+    def _set_current_steps(self, steps):
+        self.current_steps = [int(step) for step in steps[:5]]
+        self.actual_joint_rads = convert_steps_to_rads(*self.current_steps)
+
+    def _handle_motion_line(self, line):
+        if line.startswith("POS:"):
+            parts = line.replace("POS:", "").strip().split(",")
+            if len(parts) >= 5:
+                self._set_current_steps(parts)
+        elif line.startswith("PROBE_HIT:"):
+            self.last_probe_result = line
+            parts = line.replace("PROBE_HIT:", "").strip().split(",")
+            if len(parts) >= 5:
+                self._set_current_steps(parts)
+            self.last_event = "PROBE_HIT"
+        elif "PROBE FAILED" in line:
+            self.last_probe_result = "FAILED"
+            self.last_event = "PROBE_FAILED"
+        elif line in ["HOME_COMPLETE", "ABORT_COMPLETE", "MOVE_COMPLETE", "STOP_CLEARED", "STOP_TRIGGERED"]:
+            self.last_event = line
+
     def _read_loop(self):
         while self.running:
             if self.simulation_mode:
@@ -247,19 +268,7 @@ class AsyncRobotInterface:
                 if self.motion_ser and self.motion_ser.in_waiting > 0:
                     try:
                         line = self.motion_ser.readline().decode('utf-8', errors='ignore').strip()
-                        if line.startswith("POS:"):
-                            parts = line.replace("POS:", "").strip().split(",")
-                            if len(parts) >= 5:
-                                self.current_steps = [int(p) for p in parts[:5]]
-                                self.actual_joint_rads = convert_steps_to_rads(*self.current_steps)
-                        elif line.startswith("PROBE_HIT:"):
-                            self.last_probe_result = line
-                            self.last_event = "PROBE_HIT"
-                        elif "PROBE FAILED" in line:
-                            self.last_probe_result = "FAILED"
-                            self.last_event = "PROBE_FAILED"
-                        elif line in ["HOME_COMPLETE", "ABORT_COMPLETE", "MOVE_COMPLETE", "STOP_CLEARED", "STOP_TRIGGERED"]:
-                            self.last_event = line
+                        self._handle_motion_line(line)
                     except Exception:
                         pass
             time.sleep(0.008)
@@ -268,6 +277,7 @@ class AsyncRobotInterface:
         self._target_sim_force = target_val
 
     def send_move(self, b_step, s_step, e_step, wp_step, wr_step):
+        self.last_event = None
         if self.simulation_mode:
             # NEW: update simulated robot state so visualization reflects commanded move
             self.current_steps = [b_step, s_step, e_step, wp_step, wr_step]
@@ -282,6 +292,8 @@ class AsyncRobotInterface:
         Send probe command to motion board (or simulate plunge in sim mode).
         In simulation, animates descent from current position to target_z.
         """
+        self.last_event = None
+        self.last_probe_result = None
         if self.simulation_mode:
             # Simulate the plunge trajectory
             steps_in_plunge = [b_step, s_step, e_step, wp_step, wr_step]
@@ -290,7 +302,6 @@ class AsyncRobotInterface:
             time.sleep(0.8)
             return
         if self.motion_ser:
-            self.last_probe_result = None
             cmd = f"PROBE {b_step} {s_step} {e_step} {wp_step} {wr_step}\n"
             self.motion_ser.write(cmd.encode('utf-8'))
 
@@ -314,12 +325,13 @@ class AsyncRobotInterface:
         if self.simulation_mode:
             time.sleep(2.0)
             return True
-
-        self.last_event = None
         start = time.time()
         while time.time() - start < timeout:
             if self.last_event == "MOVE_COMPLETE":
+                self.last_event = None
                 return True
+            if self.last_event in ("ABORT_COMPLETE", "STOP_TRIGGERED"):
+                return False
             time.sleep(0.05)
         return False
 
@@ -347,6 +359,8 @@ class AsyncRobotInterface:
 
     def clear_stop(self):
         """Send CLEAR_STOP command."""
+        self.last_event = None
+        self.last_probe_result = None
         if self.simulation_mode:
             return
         if self.motion_ser:
