@@ -366,21 +366,20 @@ class AsyncRobotInterface:
             self.motion_ser.write(b"ABORT\n")
 
     def clear_stop(self):
-        """Send CLEAR_STOP command and return whether the controller acknowledged it."""
+        """Send CLEAR_STOP command."""
         self._reset_motion_state()
         if self.simulation_mode:
-            return True
+            return
         if not self.motion_ser:
-            return False
+            return
 
         self.motion_ser.write(b"CLEAR_STOP\n")
         start = time.time()
         while time.time() - start < 1.0:
             if self.last_event == "STOP_CLEARED":
                 self.last_event = None
-                return True
+                return
             time.sleep(0.02)
-        return False
 
     def close(self):
         """Shutdown the interface gracefully."""
